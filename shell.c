@@ -6,13 +6,15 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 int main(){
-	int pid, len, i = 0, background = 0, mode, fd;
+	int pid, len, i = 0, background = 0, mode, fd, execret;
 	int j = 0, pipefd[2]; //j is the number of times we will need to run exec
 	char input[128] = "";
 	//char *arg2[12] = {"-l", NULL};
 	retval value;
+	char *currdir, pwd[128];
 	totalCmd table = (onecmd **)malloc(sizeof(onecmd *) * 16);
 	//initP(table);
 	
@@ -25,7 +27,7 @@ int main(){
 		fgets(input, 128, stdin);
 		len = strlen(input);
 		
-		if(input[0] == '\n')
+		if(input[0] == '\n' || input[0] == '#')
 			continue;
 		
 		if(input[len-1] == '\n')
@@ -40,6 +42,11 @@ int main(){
 			return 0;
 		}
 		
+		if(input[0] == '.' && input[1] == '/'){
+			input[0] = ' ';
+			input[1] = ' ';
+		}
+		/*preprocessing done now parse string*/
 		
 		value = ParseString(table, input);
 		if(value.background == 1)
@@ -100,9 +107,25 @@ int main(){
 					close(pipefd[1]);
 				}
 			}	
-			execvp(table[1]->name, table[1]->args);
+			execret = execvp(table[1]->name, table[1]->args);
 				
-			
+			if(execret == -1){
+				if(errno == ENOENT){
+					printf("enoent set\n");
+					currdir = getcwd(pwd, 128);
+					if(currdir == NULL){
+						perror("Some error occured");
+						exit(EXIT_FAILURE);
+					}
+					else{
+						strcat(pwd, "/");
+						strcat(pwd, table[0]->name);
+						execvp(pwd, table[0]->args);
+						
+					}
+				}
+					
+			}	
 			
 		}
 		else{
