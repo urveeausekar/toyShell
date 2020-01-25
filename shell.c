@@ -6,16 +6,27 @@
 #include <sys/wait.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <dirent.h>
+#include <dirent.h> 
+
+
+void sigint_handler(){
+	int a = 5;
+	//do nothing
+}
+
 
 int main(){
-	int pid, len, i = 0, background = 0, mode, fd, execret;
-	int j = 0, pipefd[2]; //j is the number of times we will need to run exec
+	int pid, len, i = 0, background = 0, mode, fd, execret, numpipes;
+	int j = 0; 
+	int pipearr[MAX][2]; //array to hold all pipes
+	int pidarr[MAX]; //array to hold the return values 
 	char input[128] = "";
-	//char *arg2[12] = {"-l", NULL};
-	retval value;
+	char *arg2[12] = {"grep", "\"apple\"" , "names", NULL};
 	char *currdir, pwd[128];
-	totalCmd table = (onecmd **)malloc(sizeof(onecmd *) * 16);
+	retval value;
+	int r = 0, c = 0;
+	totalCmd table = (onecmd **)malloc(sizeof(onecmd *) * MAX);
+	
 	//initP(table);
 	
 	while(1){
@@ -46,6 +57,7 @@ int main(){
 			input[0] = ' ';
 			input[1] = ' ';
 		}
+		
 		/*preprocessing done now parse string*/
 		
 		value = ParseString(table, input);
@@ -53,11 +65,11 @@ int main(){
 			background = 1;
 		
 		pid = fork();
-		
+		i = 0;
 		if(pid == 0){
 			printf("Child\n");
 			/*check for output redirection, and redirect if necessary */
-			if(table[j]->outputto != NULL && table[j]->pipe == 0){
+			if(table[i]->outputto != NULL && table[i]->pipe == 0){
 				printf("in child, redirect stdout\n");
 				close(1);
 				if(table[j]->append == 1)
@@ -74,9 +86,9 @@ int main(){
 				
 			}
 			
-			if(table[j]->inputfrom != NULL){
+			if(table[i]->inputfrom != NULL){
 				close(0);
-				fd = open(table[j]->inputfrom, O_RDONLY);
+				fd = open(table[i]->inputfrom, O_RDONLY);
 				if(fd == -1){
 					perror("Couldn't open file.");
 					return errno;
@@ -84,31 +96,68 @@ int main(){
 				}
 			}
 				
-			if(table[0]->pipe == 1){
-				if(pipe(pipefd) == -1){
-					perror("pipe");
-					exit(EXIT_FAILURE);
-				}
-				if(fork() == 0){
-					/*command to the left of pipe ie this process writes into pipe*/
-					close(1);
-					dup(pipefd[1]);
-					close(pipefd[1]);
-					close(pipefd[0]);
-					/*stdout redirected to pipe*/
-					execvp(table[0]->name, table[0]->args);
+			if(table[i]->pipe == 1){
+				//first find number of pipes and store in numpipes. Also make the pipes.
+				numpipes = 0;
+				for(i = 0; i < MAX && table[i]->pipe == 1; i++){
+					if(pipe(pipearr[numpipes]) == -1){
+						perror("pipe");
+						exit(EXIT_FAILURE);
+					}
+					numpipes++;
 					
 				}
-				else{
-					/* for command to the right of pipe, redirect input*/
-					close(0);
-					dup(pipefd[0]);
-					close(pipefd[0]);
-					close(pipefd[1]);
-				}
-			}	
-			execret = execvp(table[1]->name, table[1]->args);
 				
+				
+				
+				for(i = 0; i < numpipes; i++){
+					pidarr[i] = fork();
+					if(pidarr[i] == 0){
+						
+						if(i != 0){
+							close(0);
+							dup(pipearr[i - 1][0]);
+							
+							
+						}
+						
+						close(1);
+						dup(pipearr[i][1]);
+						
+						for(r = 0; r < numpipes; r++)
+							for(c = 0; c < 2; c++)
+								if(close(pipearr[r][c]) == -1)
+									perror("close");
+						
+						execret = execvp(table[i]->name, table[i]->args);
+						perror("exec");
+						exit(EXIT_FAILURE);
+						
+						
+					}
+					
+					
+					
+				}
+				
+				close(0);
+				dup(pipearr[i - 1][0]);
+				
+				for(r = 0; r < numpipes; r++)
+					for(c = 0; c < 2; c++)
+						if(close(pipearr[r][c]) == -1)
+							perror("close");		
+		
+				
+				
+			}
+			
+			
+			
+			
+			
+			execret = execvp(table[i]->name, table[i]->args);
+			
 			if(execret == -1){
 				if(errno == ENOENT){
 					printf("enoent set\n");
@@ -127,14 +176,20 @@ int main(){
 					
 			}	
 			
+			
 		}
-		else{
+		else if(pid > 0){
 			if(background == 0){
 				wait(0);
 			}
 			else{
 				background = 0;
 			}
+			signal(SIGINT, sigint_handler);
+		}
+		else{
+			perror("fork :");
+			exit(EXIT_FAILURE);
 		}
 	}
 	
