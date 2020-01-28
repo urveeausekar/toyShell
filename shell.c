@@ -10,11 +10,13 @@
 
 int shell_terminal = STDIN_FILENO;
 int shell_pgid;
+int sigint_came = 0;
+char input[128] = "";
 
-/*void sigint_handler(){
-	//printf("\n");
-	int a = 5;
-}*/
+void sigint_handler(){
+	sigint_came = 1;
+	
+}
 
 void sigtstp_handler(){
 	tcsetpgrp(shell_terminal, shell_pgid);
@@ -22,19 +24,40 @@ void sigtstp_handler(){
 
 int main(){
 	int len, i = 0, background = 0, mode, fd, execret, numpipes, wfstatus, wgstatus, k = 0;
-	pid_t pid, shell_pgid, gid;
+	pid_t pid, shell_pgid, gid, prev_pid;
 	int fg = 0, bg = 0;
 	pid_t paused[MAX];
-	int stopped = 0;
+	int stopped = 0, begin = -1;
 	int j = 0; 
 	int pipearr[MAX][2]; //array to hold all pipes
 	int pidarr[MAX]; //array to hold the return values 
-	char input[128] = "";
+	
 	char *currdir, pwd[128];
 	retval value;
 	int r = 0, c = 0;
 	totalCmd table[MAX];
 	
+	struct sigaction sigintnew, sigtstpnew;
+	
+	sigintnew.sa_handler = SIG_IGN;	
+	sigemptyset(&sigintnew.sa_mask);
+	sigaction(SIGINT, &sigintnew, NULL);
+	
+	sigtstpnew.sa_handler = SIG_IGN;
+	sigemptyset(&sigintnew.sa_mask);
+	sigaction(SIGTSTP, &sigintnew, NULL);
+	
+	sigtstpnew.sa_handler = SIG_IGN;
+	sigemptyset(&sigintnew.sa_mask);
+	sigaction(SIGQUIT, &sigintnew, NULL);
+	
+	sigtstpnew.sa_handler = SIG_IGN;
+	sigemptyset(&sigintnew.sa_mask);
+	sigaction(SIGTTIN, &sigintnew, NULL);
+	
+	/*sigtstpnew.sa_handler = SIG_IGN;
+	sigemptyset(&sigintnew.sa_mask);
+	sigaction(SIGTTOU, &sigintnew, NULL);*/
 	
 	for(j = 0; j < MAX; j++){
 		table[j] = (onecmd **)malloc(sizeof(onecmd *) * MAX);
@@ -49,12 +72,12 @@ int main(){
 	//find some way to avoid buffer overflow
 	
 	/* Ignore interactive and job-control signals.  */
-	signal (SIGINT, SIG_IGN);
-	signal (SIGQUIT, SIG_IGN);
-	signal (SIGTSTP, SIG_IGN);
-	signal (SIGTTIN, SIG_IGN);
+	//signal (SIGINT, sigint_handler);
+	//signal (SIGQUIT, SIG_IGN);
+	//signal (SIGTSTP, SIG_IGN);
+	//signal (SIGTTIN, SIG_IGN);
 	signal (SIGTTOU, SIG_IGN);
-	signal (SIGCHLD, SIG_IGN);
+	//signal (SIGCHLD, SIG_IGN);
 	
 	shell_pgid = getpid ();
 	if (setpgid (shell_pgid, shell_pgid) < 0){
@@ -70,9 +93,19 @@ int main(){
 		printf("MyShell$ ");
 		printf("\033[0m");
 		
+		
+		
 		/* preprocess the input string - remove \n and spaces at the end */
+		if(sigint_came){
+			sigint_came = 0;
+			//printf("in sigint came\n");
+			//strcpy(input, "\n");
+		}
+		
 		fgets(input, 128, stdin);
+		
 		len = strlen(input);
+		
 		
 		if(input[0] == '\n' || input[0] == '#')
 			continue;
@@ -86,9 +119,10 @@ int main(){
 			
 		if(strcmp(input, "fg") == 0){
 			fg = 1;
+			printf("fg read\n");
 		}else if(strcmp(input, "bg") == 0){
 			bg = 1;
-			continue;
+			background = 1;
 		}
 			
 		if(strcmp(input, "exit") == 0){
@@ -109,11 +143,15 @@ int main(){
 		if(value.background == 1)
 			background = 1;
 		i = 0;
-		//if(fg == 0)
-		pid = fork();
-	
-		table[j][i]->pid = pid;
-		
+		if(fg == 0 && bg == 0){
+			pid = fork();
+			table[j][i]->pid = pid;
+		}
+		else{
+			prev_pid = pid;
+			pid = 3;
+			printf("in pid changer\n");
+		}
 		if(pid == 0){
 			/* In the child*/
 			pid = getpid();
@@ -126,12 +164,33 @@ int main(){
         		 * Below we reset the signal handles to default, becuse they are inherited.
         		 */
         		 
-			signal (SIGINT, SIG_DFL);
+			/*signal (SIGINT, SIG_DFL);
 			signal (SIGQUIT, SIG_DFL);
 			signal (SIGTSTP, SIG_DFL);
 			signal (SIGTTIN, SIG_DFL);
 			signal (SIGTTOU, SIG_DFL);
-			signal (SIGCHLD, SIG_DFL);
+			signal (SIGCHLD, SIG_DFL);*/
+			
+			sigintnew.sa_handler = SIG_DFL;	
+			sigemptyset(&sigintnew.sa_mask);
+			sigaction(SIGINT, &sigintnew, NULL);
+			
+			sigtstpnew.sa_handler = SIG_DFL;
+			sigemptyset(&sigintnew.sa_mask);
+			sigaction(SIGTSTP, &sigintnew, NULL);
+			
+			sigtstpnew.sa_handler = SIG_DFL;
+			sigemptyset(&sigintnew.sa_mask);
+			sigaction(SIGQUIT, &sigintnew, NULL);
+			
+			sigtstpnew.sa_handler = SIG_DFL;
+			sigemptyset(&sigintnew.sa_mask);
+			sigaction(SIGTTOU, &sigintnew, NULL);
+			
+			sigtstpnew.sa_handler = SIG_DFL;
+			sigemptyset(&sigintnew.sa_mask);
+			sigaction(SIGTTIN, &sigintnew, NULL);
+			
 				
 			if(table[j][i]->pipe == 1){
 				/*first find number of pipes and store in numpipes. Also make the pipes.*/
@@ -243,26 +302,34 @@ int main(){
 			
 		}
 		else if(pid > 0){
-			
-			jobtable[j].onejob = table[j];
-			jobtable[j].status = 'r';
-			jobtable[j].background = background;
-			jobtable[j].foreground = background == 0 ? 1 : 0 ;
-			jobtable[j].num = value.num;
-			if(jobtable[j].gid == 0)
-				jobtable[j].gid = pid;
-			setpgid(pid, jobtable[j].gid);
-			
+			if(fg == 0 && bg == 0){
+				jobtable[j].onejob = table[j];
+				jobtable[j].status = 'r';
+				jobtable[j].background = background;
+				jobtable[j].foreground = background == 0 ? 1 : 0 ;
+				jobtable[j].num = value.num;
+				if(jobtable[j].gid == 0)
+					jobtable[j].gid = pid;
+				setpgid(pid, jobtable[j].gid);
+			}
 			
 			if(background == 0){
 				/*Then set process to foreground*/
-				tcsetpgrp(shell_terminal, jobtable[j].gid);
-				/*if(fg == 1){
+				if(fg != 1)
+					tcsetpgrp(shell_terminal, jobtable[j].gid);
+				if(fg == 1){
+					printf("fg read in parent background is 0\n");
 					tcsetpgrp (shell_terminal, paused[stopped - 1]);
 					fg = 0;
-					if (kill (- paused[stopped - 1], SIGCONT) < 0)
+					pid = prev_pid;
+					for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++)
+						if(jobtable[k].gid == paused[stopped - 1]){
+							jobtable[k].status = 'r';
+						}
+					stopped--;
+					if (kill (- paused[stopped], SIGCONT) < 0)
         					perror ("kill (SIGCONT)");
-				}*/
+				}
 				pid = waitpid(-1, &wfstatus, WUNTRACED);
 				
 				tcsetpgrp(shell_terminal, shell_pgid);
@@ -272,6 +339,12 @@ int main(){
 						if(jobtable[k].gid == pid){
 							jobtable[k].status = 'p';
 						}
+					printf("\n");
+					printf("[%d]   Stopped            %s\n", stopped, input);
+				}
+				if(WIFSIGNALED(wfstatus) && WTERMSIG(wfstatus) == SIGINT){
+					printf("\n");
+					
 				}
 					
 			}
@@ -279,7 +352,8 @@ int main(){
 				background = 0;
 				if(bg == 1){
 					bg = 0;
-					if (kill (- paused[stopped - 1], SIGCONT) < 0)
+					stopped--;
+					if (kill (- paused[stopped], SIGCONT) < 0)
         					perror ("kill (SIGCONT)");
 				}
 				waitpid(-1, &wgstatus, WNOHANG);
