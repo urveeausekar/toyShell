@@ -23,9 +23,9 @@ void sigtstp_handler(){
 }
 
 int main(){
-	int len, i = 0, background = 0, mode, fd, execret, numpipes, wfstatus, wgstatus, k = 0;
-	pid_t pid, shell_pgid, gid, prev_pid;
-	int fg = 0, bg = 0;
+	int len, i = 0, background = 0, mode, fd, execret, numpipes, wfstatus, wgstatus, k = 0, m, l;
+	pid_t pid, shell_pgid, gid, prev_pid, retpid;
+	int fg = 0, bg = 0, jobnum = 0;
 	pid_t paused[MAX];
 	int stopped = 0, begin = -1;
 	int j = 0; 
@@ -37,32 +37,13 @@ int main(){
 	int r = 0, c = 0;
 	totalCmd table[MAX];
 	
-	struct sigaction sigintnew, sigtstpnew;
 	
-	sigintnew.sa_handler = SIG_IGN;	
-	sigemptyset(&sigintnew.sa_mask);
-	sigaction(SIGINT, &sigintnew, NULL);
-	
-	sigtstpnew.sa_handler = SIG_IGN;
-	sigemptyset(&sigintnew.sa_mask);
-	sigaction(SIGTSTP, &sigintnew, NULL);
-	
-	sigtstpnew.sa_handler = SIG_IGN;
-	sigemptyset(&sigintnew.sa_mask);
-	sigaction(SIGQUIT, &sigintnew, NULL);
-	
-	sigtstpnew.sa_handler = SIG_IGN;
-	sigemptyset(&sigintnew.sa_mask);
-	sigaction(SIGTTIN, &sigintnew, NULL);
-	
-	/*sigtstpnew.sa_handler = SIG_IGN;
-	sigemptyset(&sigintnew.sa_mask);
-	sigaction(SIGTTOU, &sigintnew, NULL);*/
 	
 	for(j = 0; j < MAX; j++){
 		table[j] = (onecmd **)malloc(sizeof(onecmd *) * MAX);
 		jobtable[j].onejob = NULL;
 		jobtable[j].gid = 0;
+		jobtable[j].resumed = 0;
 		if(table[j] == NULL){
 			perror("Malloc failed");
 			exit(EXIT_FAILURE);
@@ -72,12 +53,12 @@ int main(){
 	//find some way to avoid buffer overflow
 	
 	/* Ignore interactive and job-control signals.  */
-	//signal (SIGINT, sigint_handler);
-	//signal (SIGQUIT, SIG_IGN);
-	//signal (SIGTSTP, SIG_IGN);
-	//signal (SIGTTIN, SIG_IGN);
+	signal (SIGINT, sigint_handler);
+	signal (SIGQUIT, SIG_IGN);
+	signal (SIGTSTP, SIG_IGN);
+	signal (SIGTTIN, SIG_IGN);
 	signal (SIGTTOU, SIG_IGN);
-	//signal (SIGCHLD, SIG_IGN);
+	signal (SIGCHLD, SIG_IGN);
 	
 	shell_pgid = getpid ();
 	if (setpgid (shell_pgid, shell_pgid) < 0){
@@ -85,8 +66,8 @@ int main(){
 		exit (1);
         }
 
-         /* Grab control of the terminal.  */
-	tcsetpgrp (shell_terminal, shell_pgid);
+         /* set shell as foreground process  */
+	tcsetpgrp(shell_terminal, shell_pgid);
 	
 	while(1){
 		printf("\033[1;36m");
@@ -114,16 +95,8 @@ int main(){
 			input[len - 1] = '\0';
 			
 		
-		for(i = len - 2; i > 0 && (input[i] == ' ' || input[i] == '\t'); i--)
+		for(i = len - 2; i > 0 && (input[i] == ' ' || input[i] == '\t'); i--, len--)
 			input[i] = '\0';
-			
-		if(strcmp(input, "fg") == 0){
-			fg = 1;
-			printf("fg read\n");
-		}else if(strcmp(input, "bg") == 0){
-			bg = 1;
-			background = 1;
-		}
 			
 		if(strcmp(input, "exit") == 0){
 			/*exit the shell when user enters exit */
@@ -139,18 +112,31 @@ int main(){
 		
 		value = ParseString(table[j], input);
 		
+		if(strcmp(table[j][0]->name, "fg") == 0)
+			fg = 1;
+		else if(strcmp(table[j][0]->name, "bg") == 0){
+			bg = 1;
+			background = 1;
+		}
+		if(fg == 1 || bg == 1){//if you really want jobnum it will be at args 1
+			if(table[j][0]->args[0] && table[j][0]->args[0][0] == '%'){
+					jobnum = (int)(table[j][0]->args[0][1] - '0');
+				}
+			//jobnum = index of paused array at which pid of that process - 1
+		}
 		
 		if(value.background == 1)
 			background = 1;
 		i = 0;
 		if(fg == 0 && bg == 0){
 			pid = fork();
+			//printf("forked\n");
 			table[j][i]->pid = pid;
 		}
 		else{
 			prev_pid = pid;
 			pid = 3;
-			printf("in pid changer\n");
+			//printf("in pid changer\n");
 		}
 		if(pid == 0){
 			/* In the child*/
@@ -164,32 +150,12 @@ int main(){
         		 * Below we reset the signal handles to default, becuse they are inherited.
         		 */
         		 
-			/*signal (SIGINT, SIG_DFL);
+			signal (SIGINT, SIG_DFL);
 			signal (SIGQUIT, SIG_DFL);
 			signal (SIGTSTP, SIG_DFL);
 			signal (SIGTTIN, SIG_DFL);
 			signal (SIGTTOU, SIG_DFL);
-			signal (SIGCHLD, SIG_DFL);*/
-			
-			sigintnew.sa_handler = SIG_DFL;	
-			sigemptyset(&sigintnew.sa_mask);
-			sigaction(SIGINT, &sigintnew, NULL);
-			
-			sigtstpnew.sa_handler = SIG_DFL;
-			sigemptyset(&sigintnew.sa_mask);
-			sigaction(SIGTSTP, &sigintnew, NULL);
-			
-			sigtstpnew.sa_handler = SIG_DFL;
-			sigemptyset(&sigintnew.sa_mask);
-			sigaction(SIGQUIT, &sigintnew, NULL);
-			
-			sigtstpnew.sa_handler = SIG_DFL;
-			sigemptyset(&sigintnew.sa_mask);
-			sigaction(SIGTTOU, &sigintnew, NULL);
-			
-			sigtstpnew.sa_handler = SIG_DFL;
-			sigemptyset(&sigintnew.sa_mask);
-			sigaction(SIGTTIN, &sigintnew, NULL);
+			signal (SIGCHLD, SIG_DFL);
 			
 				
 			if(table[j][i]->pipe == 1){
@@ -293,7 +259,9 @@ int main(){
 						strcat(pwd, "/");
 						strcat(pwd, table[j][i]->name);
 						execvp(pwd, table[j][i]->args);
-						
+						perror("execve");
+						printf("Command not found\n");
+						exit(EXIT_FAILURE);
 					}
 				}
 					
@@ -311,14 +279,17 @@ int main(){
 				if(jobtable[j].gid == 0)
 					jobtable[j].gid = pid;
 				setpgid(pid, jobtable[j].gid);
+				//printf("updated job table\n");
 			}
 			
 			if(background == 0){
 				/*Then set process to foreground*/
-				if(fg != 1)
+				if(fg != 1){
 					tcsetpgrp(shell_terminal, jobtable[j].gid);
+					//printf("set as foreground the job, not fg\n");
+				}
 				if(fg == 1){
-					printf("fg read in parent background is 0\n");
+					//printf("fg read in parent background is 0\n");
 					tcsetpgrp (shell_terminal, paused[stopped - 1]);
 					fg = 0;
 					pid = prev_pid;
@@ -329,37 +300,98 @@ int main(){
 					stopped--;
 					if (kill (- paused[stopped], SIGCONT) < 0)
         					perror ("kill (SIGCONT)");
+        				retpid = waitpid(paused[stopped], &wfstatus, WUNTRACED | WCONTINUED);
 				}
-				pid = waitpid(-1, &wfstatus, WUNTRACED);
+				else{
+					retpid = waitpid(jobtable[j].gid, &wfstatus, WUNTRACED | WCONTINUED);
+					//printf("done waiting, regular child, \n");
+				}
 				
 				tcsetpgrp(shell_terminal, shell_pgid);
-				if(WIFSTOPPED(wfstatus)){
-					paused[stopped++] = pid;
+				
+				/*if sigcont was received*/
+				if(WIFCONTINUED(wfstatus)){
+					//printf("sigcont received\n");
 					for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++)
-						if(jobtable[k].gid == pid){
-							jobtable[k].status = 'p';
+						if(jobtable[k].gid == retpid){
+							jobtable[k].status = 'r';
+							jobtable[k].resumed = 1;
 						}
-					printf("\n");
-					printf("[%d]   Stopped            %s\n", stopped, input);
+					
+					retpid = waitpid(retpid, &wfstatus, WUNTRACED);
 				}
+				
+				
+				
+				
+				/*if sigtstp, then put job in paused array and update job table*/
+				if(WIFSTOPPED(wfstatus) && WSTOPSIG(wfstatus) == SIGTSTP){
+					if(stopped == MAX){
+						printf("This facility is temporarily unavailable.\n");
+						
+					}
+					else{
+						paused[stopped++] = retpid;
+						for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++)
+							if(jobtable[k].gid == retpid){
+								jobtable[k].status = 'p';
+							}
+						printf("\n");
+						printf("[%d]   Stopped            %s\n", stopped, input);
+					}
+				}
+				
+				/*if sigint, then say job is complete*/
 				if(WIFSIGNALED(wfstatus) && WTERMSIG(wfstatus) == SIGINT){
-					printf("\n");
+					printf("terminated by sigint\n");
+					for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++){
+						if(jobtable[k].gid == pid)
+							jobtable[k].status = 'c';
+					}
 					
 				}
+				
+				
+				/*if child exited normally*/
+				if(WIFEXITED(wfstatus)){
+					//printf("child exited normally foreground\n");
+					for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++){
+						if(jobtable[k].gid == pid)
+							jobtable[k].status = 'c';
+					}
+				}
+				wfstatus = 0;
 					
 			}
 			else{
 				background = 0;
 				if(bg == 1){
 					bg = 0;
+					pid = prev_pid;
 					stopped--;
 					if (kill (- paused[stopped], SIGCONT) < 0)
         					perror ("kill (SIGCONT)");
 				}
-				waitpid(-1, &wgstatus, WNOHANG);
+				pid = waitpid(-1, &wgstatus, WNOHANG | WUNTRACED);
+				
+				if(WIFEXITED(wgstatus)){
+					//printf("child exited normally, background\n");
+					for(k = 0; k < MAX && jobtable[k].onejob != NULL ; k++){
+						if(jobtable[k].gid == pid){
+							jobtable[k].status = 'c';
+							
+						}
+					}
+				}
+				
 				j++;
+				if(j == MAX){
+					fprintf(stderr, "resource unavailable, buffer full");
+					exit(EXIT_FAILURE);
+				}
 			}
-		
+			
+			jobtable[j].gid = 0;//changed this now
 		}
 		else{
 			perror("fork :");
