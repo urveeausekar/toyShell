@@ -20,9 +20,9 @@ typedef struct oneCommand{
 }onecmd;
 
 // above structure represents one command like cat, ls etc, therefore it represents one process.
-//in parser, init will limit the arguments of the one command to 8
-//the entire command input into shell by user is is limited to 16 individual structures
-//any char pointer except for a char array that holds args is 32 char long. The arg char array is 16 chars long
+//in parser, init will limit the arguments of the one command to MAXARGS 
+//the entire command input into shell by user is is limited to MAX
+//any char pointer is 32 char long. (MAXSTR)
 
 
 typedef onecmd** totalCmd; //array of pointers to onecmd structures. This array contains the entire information of the entire input
@@ -35,6 +35,7 @@ typedef struct job{
 	int foreground; //= 1 if in foreground
 	int background; // = 1 if & found at the end
 	int num; //number of processess in the process group represented by this job
+	int resumed;
 }job;
 
 job jobtable[MAX];

@@ -3,7 +3,6 @@
 #include <errno.h>
 
 int initP(totalCmd array){
-	//array =(onecmd **)malloc(16 * sizeof(onecmd *));
 	int i, j;
 	if (array == NULL){
 		fprintf(stdout, "Some error: Memory not allocated for array itself\n");
@@ -48,7 +47,6 @@ int initP(totalCmd array){
 		array[i]->stder = 0;
 		array[i]->numofargs = 0;
 		array[i]->append = 0;
-		//array[i]->background = 0;
 		
 	}
 	return 0;
@@ -57,7 +55,7 @@ int initP(totalCmd array){
 
 
 void deallocate(totalCmd array, int arrin){
-	int i;
+	int i,j;
 	
 	for(i = 0; i < arrin; i++){
 		if(array[i]->name[0] == '\0'){
@@ -76,6 +74,9 @@ void deallocate(totalCmd array, int arrin){
 		
 		free(array[i]->args[array[i]->numofargs]);
 		array[i]->args[array[i]->numofargs] = NULL;
+		for(j = array[i]->numofargs + 1; j < MAXARGS; j++)
+			free(array[i]->args[j]);
+			
 	}
 	
 }
@@ -123,7 +124,6 @@ retval ParseString(totalCmd array, char *input){
 						else
 							nextstate = ERROR;
 						nextstate = PROGNAME;
-						//printf("in start default\n");
 						break;
 				}
 				break;
@@ -138,12 +138,8 @@ retval ParseString(totalCmd array, char *input){
 							pname[j] = '\0';
 						else
 							nextstate = ERROR;
-						//if(array[arrin]->name == NULL)
-							//printf("array[arrin]->name null\n");
 						
 						strcpy(array[arrin]->name, pname);
-						//if(array[arrin]->args[0] == NULL)
-							//printf("array[arrin]->name null\n");
 						strcpy(array[arrin]->args[0], pname);
 						argno++;
 						if(argno == MAXARGS)
@@ -152,7 +148,7 @@ retval ParseString(totalCmd array, char *input){
 						arrin++;
 						if(arrin == MAX)
 							nextstate = DONE;
-						//printf("in progname, null\n");
+						
 						break;
 					case ' ':
 						if(input[i - 1] != '|'){
@@ -226,7 +222,7 @@ retval ParseString(totalCmd array, char *input){
 							pname[j++] = input[i++];
 						else
 							nextstate = ERROR;
-						//printf("in progname, default\n");
+						
 						nextstate = PROGNAME;
 						break;
 				}
@@ -242,10 +238,7 @@ retval ParseString(totalCmd array, char *input){
 							nextstate = ERROR;
 						break;
 					case ' ':
-						/*if(input[i - 1] == ' '){
-							nextstate = ARGS;
-							break;
-						}*/
+						
 						argn[a] = '\0';
 						strcpy(array[arrin]->args[argno], argn);
 						argno++;
@@ -292,7 +285,7 @@ retval ParseString(totalCmd array, char *input){
 							}
 							array[arrin]->numofargs = argno;
 							arrin++;
-							//printf("in args ampersand argno %d\n", argno);
+							
 							
 						}
 						else
@@ -309,7 +302,6 @@ retval ParseString(totalCmd array, char *input){
 						
 						array[arrin]->numofargs = argno;
 						argno = 0;
-						//printf("args pipe set argno to 0\n");
 						arrin++;
 						if(arrin == MAX)
 							nextstate = DONE;
@@ -463,9 +455,7 @@ retval ParseString(totalCmd array, char *input){
 				value.num = arrin;
 				
 				array[arrin - 1]->args[argno] = NULL;
-				deallocate(array, arrin);
-				//print(array, arrin);
-				
+				deallocate(array, arrin);			
 				return value;
 				break;
 			case ERROR :
