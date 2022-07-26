@@ -1,3 +1,5 @@
+# toyShell - a small shell
+
 This is an implementation of a shell, written using Linux system calls (fork-exec, signals, etc)
 It implements the following functionalities:
 
